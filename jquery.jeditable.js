@@ -28,7 +28,7 @@
   * @param String  options[name]      POST parameter name of edited content
   * @param String  options[id]        POST parameter name of edited div id
   * @param Hash    options[submitdata] Extra parameters to send when submitting edited content.
-  * @param String  options[type]      text, textarea or select (or any 3rd party input type) **
+  * @param Mixed   options[type]      text, textarea or select (or any 3rd party input type) **
   * @param Integer options[rows]      number of rows if using textarea ** 
   * @param Integer options[cols]      number of columns if using textarea **
   * @param Mixed   options[height]    'auto', 'none' or height in pixels **
@@ -41,8 +41,8 @@
   * @param String  options[indicator] indicator html to show when saving
   * @param String  options[tooltip]   optional tooltip text via title attribute **
   * @param String  options[event]     jQuery event such as 'click' of 'dblclick' **
-  * @param String  options[submit]    submit button value, empty means no button **
-  * @param String  options[cancel]    cancel button value, empty means no button **
+  * @param Mixed   options[submit]    submit button value, empty means no button **
+  * @param Mixed   options[cancel]    cancel button value, empty means no button **
   * @param String  options[cssclass]  CSS class to apply to input form. 'inherit' to copy from parent. **
   * @param String  options[style]     Style to apply to input form 'inherit' to copy from parent. **
   * @param String  options[select]    true or false, when true text is highlighted ??
@@ -58,6 +58,26 @@
   */
 
 (function($) {
+	
+	/**
+	 * Returns a "functional" value of a target element.
+	 * 
+	 * If target is a function, calls it with specified
+	 * self and params and uses the result. Otherwise,
+	 * assumes target is a value itself.
+	 * 
+	 * @param target Mixed element to take value from.
+	 * @param self Self to use in function call.
+	 * @param params Params to use in function call.
+	 */
+	function expand(target, self, params) {
+		if ($.isFunction(target)) {
+        	return target.apply(self, params);
+        }
+        else {
+        	return target;
+        }
+	}
 
     $.fn.editable = function(target, options) {
             
@@ -79,35 +99,37 @@
         
         var settings = $.extend({}, $.fn.editable.defaults, {target:target}, options);
         
-        /* setup some functions */
-        var plugin   = $.editable.types[settings.type].plugin || function() { };
-        var submit   = $.editable.types[settings.type].submit || function() { };
-        var buttons  = $.editable.types[settings.type].buttons 
-                    || $.editable.types['defaults'].buttons;
-        var content  = $.editable.types[settings.type].content 
-                    || $.editable.types['defaults'].content;
-        var element  = $.editable.types[settings.type].element 
-                    || $.editable.types['defaults'].element;
-        var reset    = $.editable.types[settings.type].reset 
-                    || $.editable.types['defaults'].reset;
-        var callback = settings.callback || function() { };
-        var onedit   = settings.onedit   || function() { }; 
-        var onsubmit = settings.onsubmit || function() { };
-        var onreset  = settings.onreset  || function() { };
-        var onerror  = settings.onerror  || reset;
-          
-        /* Show tooltip. */
-        if (settings.tooltip) {
-            $(this).attr('title', settings.tooltip);
-        }
-        
-        settings.autowidth  = 'auto' == settings.width;
-        settings.autoheight = 'auto' == settings.height;
-        
         return this.each(function() {
-                        
-            /* Save this to self because this changes when scope changes. */
-            var self = this;  
+        	/* Save this to self because this changes when scope changes. */
+            var self = this;
+            
+            /* Define input type. */
+            var input_type = expand(settings.type, self, [settings]);
+            
+            /* setup some functions */
+            var plugin   = $.editable.types[input_type].plugin || function() { };
+            var submit   = $.editable.types[input_type].submit || function() { };
+            var buttons  = $.editable.types[input_type].buttons 
+                        || $.editable.types['defaults'].buttons;
+            var content  = $.editable.types[input_type].content 
+                        || $.editable.types['defaults'].content;
+            var element  = $.editable.types[input_type].element 
+                        || $.editable.types['defaults'].element;
+            var reset    = $.editable.types[input_type].reset 
+                        || $.editable.types['defaults'].reset;
+            var callback = settings.callback || function() { };
+            var onedit   = settings.onedit   || function() { }; 
+            var onsubmit = settings.onsubmit || function() { };
+            var onreset  = settings.onreset  || function() { };
+            var onerror  = settings.onerror  || reset;
+              
+            /* Show tooltip. */
+            if (settings.tooltip) {
+                $(this).attr('title', settings.tooltip);
+            }
+            
+            settings.autowidth  = 'auto' == settings.width;
+            settings.autoheight = 'auto' == settings.height;
                    
             /* Inlined block elements lose their width and height after first edit. */
             /* Save them for later use as workaround. */
@@ -262,6 +284,12 @@
                         reset.apply(form, [settings, self]);
                     }
                 });
+                
+                /* Prevent default action for input element. */
+                /* This is useful if we have editable link. */
+                input.click(function(e) {
+                	e.preventDefault();
+                });
 
                 /* Discard, submit or nothing with changes when clicking outside. */
                 /* Do nothing is usable when navigating with tab. */
@@ -404,17 +432,20 @@
                     return(input);
                 },
                 content : function(string, settings, original) {
-                    $(':input:first', this).val(string);
+                    $(':input:first', this).val(
+                    		$.isFunction(settings.html2text) ? settings.html2text(string) : string);
                 },
                 reset : function(settings, original) {
                   original.reset(this);
                 },
                 buttons : function(settings, original) {
+                	/* Display submit button if needed. */
                     var form = this;
-                    if (settings.submit) {
+                    var settingsSubmit = expand(settings.submit, this, [settings]);
+                    if (settingsSubmit) {
                         /* If given html string use that. */
-                        if (settings.submit.match(/>$/)) {
-                            var submit = $(settings.submit).click(function() {
+                        if (settingsSubmit.match(/>$/)) {
+                            var submit = $(settingsSubmit).click(function() {
                                 if (submit.attr("type") != "submit") {
                                     form.submit();
                                 }
@@ -422,24 +453,27 @@
                         /* Otherwise use button with given string as text. */
                         } else {
                             var submit = $('<button type="submit" />');
-                            submit.html(settings.submit);                            
+                            submit.html(settingsSubmit);                            
                         }
                         $(this).append(submit);
                     }
-                    if (settings.cancel) {
+                    
+                    /* Display Cancel button if needed. */
+                    var settingsCancel = expand(settings.cancel, this, [settings]);
+                    if (settingsCancel) {
                         /* If given html string use that. */
-                        if (settings.cancel.match(/>$/)) {
-                            var cancel = $(settings.cancel);
+                        if (settingsCancel.match(/>$/)) {
+                            var cancel = $(settingsCancel);
                         /* otherwise use button with given string as text */
                         } else {
                             var cancel = $('<button type="cancel" />');
-                            cancel.html(settings.cancel);
+                            cancel.html(settingsCancel);
                         }
                         $(this).append(cancel);
 
                         $(cancel).click(function(event) {
-                            if ($.isFunction($.editable.types[settings.type].reset)) {
-                                var reset = $.editable.types[settings.type].reset;                                                                
+                            if ($.isFunction($.editable.types[input_type].reset)) {
+                                var reset = $.editable.types[input_type].reset;                                                                
                             } else {
                                 var reset = $.editable.types['defaults'].reset;                                
                             }
@@ -451,7 +485,7 @@
             },
             text: {
                 element : function(settings, original) {
-                    var input = $('<input />');
+                    var input = $('<input type="text" />');
                     if (settings.width  != 'none') { input.attr('width', settings.width);  }
                     if (settings.height != 'none') { input.attr('height', settings.height); }
                     /* https://bugzilla.mozilla.org/show_bug.cgi?id=236791 */
